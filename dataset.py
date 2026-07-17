@@ -1,3 +1,7 @@
+# ----------
+# !!!FIX!!!
+# ----------
+
 import torchvision
 import torch
 from PIL import Image
@@ -5,7 +9,7 @@ from PIL import Image
 DIM = 448
 IMAGE_RES = (DIM, DIM)
 
-# resize img to 448x448
+# resize img to 448x448; consider replacing this with a compose class in train
 def resize(img_obj):
     resize = img_obj.resize(IMAGE_RES)
     img = torchvision.transforms.ToTensor()(resize)

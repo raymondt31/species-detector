@@ -1,3 +1,7 @@
+# ----------
+# !!!FIX!!!
+# ----------
+
 import torch
 
 def IOU(boxes_preds, boxes_labels):
@@ -35,3 +39,12 @@ def IOU(boxes_preds, boxes_labels):
 
     # 1e-6 padding to prevent NaN w/ div by 0 and exploding denominators
     return intersection / (box1_area + box2_area - intersection + 1e-6)
+
+    #TODO: Implement the following
+    # def NMS():
+    # def mean_average_precision():
+    # def cellboxes_to_boxes():
+    # def get_bboxes():
+    # def plot_image():
+    # def save_checkpoint():
+    # def load_checkpoint():
