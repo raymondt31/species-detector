@@ -1,27 +1,22 @@
-# ----------
-# !!!FIX!!!
-# ----------
+# Working!
 
 import torchvision
 import torch
-from PIL import Image
-
-DIM = 448
-IMAGE_RES = (DIM, DIM)
-
-# resize img to 448x448; consider replacing this with a compose class in train
-def resize(img_obj):
-    resize = img_obj.resize(IMAGE_RES)
-    img = torchvision.transforms.ToTensor()(resize)
-    return img
+import torchvision.transforms as transforms
 
 class VOCdataset(torch.utils.data.Dataset):
     # TODO: edit to take in S,B,C parameters
-    def __init__(self, S=7, B=2, C=20):
+    def __init__(self, S=7, B=2, C=20, transform=None):
         self.S = S
         self.B = B
         self.C = C
-        self.raw_dataset = torchvision.datasets.VOCDetection(root="./data", year="2012", image_set="train", download=False)
+
+        # Hardcoded resize replaced with transform to facilitate data augmentation later
+        self.transform = transform
+
+        self.raw_dataset = torchvision.datasets.VOCDetection(
+            root="./data", year="2012", image_set="train", download=False
+        )
         self.obj_to_index = {
             'horse': 0, 'person': 1, 'bottle': 2,
             'dog': 3, 'tvmonitor': 4, 'car': 5,
@@ -36,16 +31,18 @@ class VOCdataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.raw_dataset)
     
+    # this gets triggered by [] notation; ie dataset[0] = dataset.__getitem__(0)
     def __getitem__(self, idx):
 
-        target_tensor = torch.zeros((7,7,30))
-        raw_img, annotation = self.raw_dataset[idx]
-        img_tensor = resize(raw_img)
+        target_tensor = torch.zeros((self.S, self.S, self.C + self.B * 5))
 
+        raw_img, annotation = self.raw_dataset[idx]
+        
         for object in annotation['annotation']['object']: 
             
             raw_coords = object['bndbox']
             name = object['name']
+            class_label = self.obj_to_index[name]
 
             # compute normalized width and height
             raw_height = float(raw_coords['ymax']) - float(raw_coords['ymin'])
@@ -61,22 +58,67 @@ class VOCdataset(torch.utils.data.Dataset):
             n_xcenter = raw_xcenter / raw_img.size[0]
             n_ycenter = raw_ycenter / raw_img.size[1]
 
-            cell_col = int(n_xcenter * 7)
-            cell_row = int(n_ycenter * 7)
+            cell_col = int(n_xcenter * self.S)
+            cell_row = int(n_ycenter * self.S)
 
-            x_center = (n_xcenter * 7) - cell_col
-            y_center = (n_ycenter * 7) - cell_row
-            
-            # each tensor input is [c1, c2, ... , c20, p_c1, x, y, w, h, p_c2, x, y, w, h]
-            #                                           20  21 22 23 24
-            cell_tensor = target_tensor[cell_row][cell_col]
-            cell_tensor[self.obj_to_index[name]] = 1
-            cell_tensor[20] = 1
-            cell_tensor[21] = x_center
-            cell_tensor[22] = y_center
-            cell_tensor[23] = n_width
-            cell_tensor[24] = n_height
+            x_center = (n_xcenter * self.S) - cell_col
+            y_center = (n_ycenter * self.S) - cell_row
+
+            # Make sure cell doesn't already have an object detected
+            if target_tensor[cell_row, cell_col, self.C] == 0:
+                # each tensor input is [c1, c2, ... , c20, p_c1, x, y, w, h, p_c2, x, y, w, h]
+                #                                           20  21 22 23 24
+
+                target_tensor[cell_row, cell_col, class_label] = 1
+                target_tensor[cell_row, cell_col, self.C] = 1
+
+                box_coords = torch.tensor([x_center, y_center, n_width, n_height])
+                target_tensor[cell_row, cell_col, self.C+1: self.C+5] = box_coords
+
+        # apply transformation if passed in
+        if self.transform:
+            img_tensor = self.transform(raw_img)
+        else: # otherwise just turn the raw image into a usable tensor
+            img_tensor = transforms.ToTensor()(raw_img)
 
         return img_tensor, target_tensor
     
 #TODO: Test + Debug
+if __name__ == "__main__":
+    print("Testing Dataset.py...")
+
+    # chain operations, use this for data augmentation later
+    transform = transforms.Compose([
+        transforms.Resize((448, 448)),
+        transforms.ToTensor()
+    ])
+    dataset = VOCdataset(transform=transform)
+
+    img, target = dataset[31]
+    print(f"\nImg Tensor Shape: {img.shape}, Expected: [3, 448, 448]")
+    print(f"Target Tensor Shape: {target.shape}, Expected: [7, 7, 30]")
+
+    # limit search to cells with objects in them
+    object_cells = (target[..., 20] == 1).nonzero(as_tuple=False)
+    print(f"Found {len(object_cells)} object(s)")
+
+    for cell in object_cells:
+        row, col = cell[0].item(), cell[1].item()
+
+        cell_data = target[row, col]
+        class_idx = torch.argmax(cell_data[:20]).item()
+        confidence = cell_data[20].item()
+        x, y, w, h = cell_data[21:25].tolist()
+
+        assert 0 <= x <= 1, "x offset out of bounds!"
+        assert 0 <= y <= 1, "y offset out of bounds!"
+        assert 0 <= w <= 1, "width out of bounds!"
+        assert 0 <= h <= 1, "height out of bounds!"
+
+        print(f"\n--- Object in Cell (Row {row}, Col {col}) ---")
+        print(f"Class Index: {class_idx}")
+        print(f"Confidence:  {confidence}")
+        print(f"Box (x, y):  ({x:.4f}, {y:.4f}")
+        print(f"Box (w, h):  ({w:.4f}, {h:.4f})")
+    
+    print("\nDone Testing!")
