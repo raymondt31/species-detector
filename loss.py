@@ -2,7 +2,7 @@
 
 import torch
 import torch.nn as nn
-from util import IOU
+from utils import intersection_over_union
 
 class YOLOLoss(nn.Module):
     def __init__(self, S=7, B=2, C=20):
@@ -18,8 +18,8 @@ class YOLOLoss(nn.Module):
         predictions = predictions.reshape(-1, self.S, self.S, self.C + self.B * 5)
 
         # calculate IOUs
-        iou1 = IOU(predictions[..., 21:25], target[..., 21:25])
-        iou2 = IOU(predictions[..., 26:30], target[..., 21:25])
+        iou1 = intersection_over_union(predictions[..., 21:25], target[..., 21:25])
+        iou2 = intersection_over_union(predictions[..., 26:30], target[..., 21:25])
         ious = torch.cat((iou1.unsqueeze(0), iou2.unsqueeze(0)), dim=0)
         iou_max, best_box = torch.max(ious, dim=0)
         exists_box = target[..., 20].unsqueeze(3) # I_obji
