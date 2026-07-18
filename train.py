@@ -10,9 +10,9 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 from model import YOLOModel
 from dataset import VOCdataset
-from util import(
-    IOU,
-    NMS, # TODO: Implenent all functions below
+from utils import(
+    intersection_over_union,
+    non_max_suppression, # TODO: Implenent all functions below
     mean_average_precision,
     cellboxes_to_boxes,
     get_bboxes,
