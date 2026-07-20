@@ -6,6 +6,7 @@ import torch.optim as optim
 import torchvision.transforms.functional as FT
 from tqdm import tqdm
 from torch.utils.data import DataLoader
+from torch.utils.data import Subset
 from model import Yolov1
 from dataset import VOCdataset
 from utils import(
@@ -26,7 +27,8 @@ torch.manual_seed(seed)
 
 LEARNING_RATE = 2e-5
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-BATCH_SIZE = 16 # increase if Collab/Kaggle can handle it; for small set testing, this must be less than the size of the data
+BATCH_SIZE = 16 # increase if Collab/Kaggle can handle it
+SMALL_BATCH_SIZE = 4 # for small subset testing
 WEIGHT_DECAY = 0 # for testing that overfitting works
 EPOCHS = 100
 NUM_WORKERS = 2
@@ -89,8 +91,6 @@ def main():
     if LOAD_MODEL:
         load_checkpoint(torch.load(LOAD_MODEL_FILE), model, optimizer)
 
-    # TODO: test on a small dataset first before committing to a large one
-
     train_dataset = VOCdataset(transform=transform)
 
     train_loader = DataLoader(
@@ -102,9 +102,22 @@ def main():
         drop_last=True
     )
 
+
+    # Small Dataset for Initial Testing:
+    small_dataset = Subset(train_dataset, indices=list(range(8)))
+
+    small_loader = DataLoader(
+        dataset=small_dataset,
+        batch_size=SMALL_BATCH_SIZE,
+        num_workers=NUM_WORKERS,
+        pin_memory=PIN_MEMORY,
+        shuffle=True,
+        drop_last=True
+    )
+
     for epoch in range(EPOCHS):
         pred_boxes, target_boxes = get_bboxes(
-            train_loader, model, iou_threshold=0.5, threshold=0.4, device=DEVICE
+            small_loader, model, iou_threshold=0.5, threshold=0.4, device=DEVICE
         )
 
         mean_avg_prec = mean_average_precision(
