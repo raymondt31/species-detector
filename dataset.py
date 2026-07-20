@@ -15,7 +15,7 @@ class VOCdataset(torch.utils.data.Dataset):
         self.transform = transform
 
         self.raw_dataset = torchvision.datasets.VOCDetection(
-            root="./data", year="2012", image_set="train", download=False
+            root="./data", year="2012", image_set="train", download=False # set this to true when first cloned to Colab 
         )
         self.obj_to_index = {
             'horse': 0, 'person': 1, 'bottle': 2,
