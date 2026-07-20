@@ -34,10 +34,9 @@ class VOCdataset(torch.utils.data.Dataset):
     # this gets triggered by [] notation; ie dataset[0] = dataset.__getitem__(0)
     def __getitem__(self, idx):
 
-        target_tensor = torch.zeros((self.S, self.S, self.C + self.B * 5))
-
         raw_img, annotation = self.raw_dataset[idx]
-        
+
+        boxes = []        
         for object in annotation['annotation']['object']: 
             
             raw_coords = object['bndbox']
@@ -58,6 +57,23 @@ class VOCdataset(torch.utils.data.Dataset):
             n_xcenter = raw_xcenter / raw_img.size[0]
             n_ycenter = raw_ycenter / raw_img.size[1]
 
+            # Append as [class, x, y, w, h]
+            boxes.append([class_label, n_xcenter, n_ycenter, n_width, n_height])
+
+        # apply transformation if passed in; note that we now transform before defining the target tensor
+        if self.transform:
+            img_tensor, boxes = self.transform(raw_img, boxes)
+        else: # otherwise just turn the raw image into a usable tensor
+            fallback_transform = transforms.Compose([
+                transforms.Resize((448, 448)),
+                transforms.ToTensor()
+            ])
+            img_tensor = fallback_transform(raw_img)
+
+        target_tensor = torch.zeros((self.S, self.S, self.C + self.B * 5))
+        
+        for box in boxes: 
+            class_label, n_xcenter, n_ycenter, n_width, n_height = box
             cell_col = int(n_xcenter * self.S)
             cell_row = int(n_ycenter * self.S)
 
@@ -66,20 +82,14 @@ class VOCdataset(torch.utils.data.Dataset):
 
             # Make sure cell doesn't already have an object detected
             if target_tensor[cell_row, cell_col, self.C] == 0:
+
                 # each tensor input is [c1, c2, ... , c20, p_c1, x, y, w, h, p_c2, x, y, w, h]
                 #                                           20  21 22 23 24
-
                 target_tensor[cell_row, cell_col, class_label] = 1
                 target_tensor[cell_row, cell_col, self.C] = 1
 
                 box_coords = torch.tensor([x_center, y_center, n_width, n_height])
                 target_tensor[cell_row, cell_col, self.C+1: self.C+5] = box_coords
-
-        # apply transformation if passed in
-        if self.transform:
-            img_tensor = self.transform(raw_img)
-        else: # otherwise just turn the raw image into a usable tensor
-            img_tensor = transforms.ToTensor()(raw_img)
 
         return img_tensor, target_tensor
     
@@ -87,14 +97,10 @@ class VOCdataset(torch.utils.data.Dataset):
 if __name__ == "__main__":
     print("Testing Dataset.py...")
 
-    # chain operations, use this for data augmentation later
-    transform = transforms.Compose([
-        transforms.Resize((448, 448)),
-        transforms.ToTensor()
-    ])
-    dataset = VOCdataset(transform=transform)
+    dataset = VOCdataset(transform=None)
 
     img, target = dataset[31]
+
     print(f"\nImg Tensor Shape: {img.shape}, Expected: [3, 448, 448]")
     print(f"Target Tensor Shape: {target.shape}, Expected: [7, 7, 30]")
 
