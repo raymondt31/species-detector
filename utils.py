@@ -149,6 +149,10 @@ def mean_average_precision(
 
         total_true_bboxes = len(ground_truths)
 
+        # Early exit -- may be holding mAP back for small datasets
+        if total_true_bboxes == 0:
+            continue
+        
         # loop through every prediction the model made for specific class, c,
         # starting from the most confident prediction
         for detection_idx, detection in enumerate(detections):
