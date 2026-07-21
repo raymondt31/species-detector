@@ -126,7 +126,7 @@ def main():
 
         print(f"Train mAP: {mean_avg_prec}")
 
-        train_fn(train_loader, model, optimizer, loss_fn)
+        train_fn(small_loader, model, optimizer, loss_fn)
 
 if __name__ == "__main__":
     main()
