@@ -2,10 +2,10 @@ import re
 import csv
 
 # Input file
-input_file = "training_logs/raw_data/tl1.txt"
+input_file = "training_logs/raw_data/tl3.txt"
 
 # Output file
-output_file = "training_logs/scraped_data/training_metrics1.csv"
+output_file = "training_logs/scraped_data/training_metrics3.csv"
 
 # Read raw log
 with open(input_file, "r") as f:
