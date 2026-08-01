@@ -16,7 +16,7 @@ from utils import(
     cellboxes_to_boxes,
     get_bboxes,
     plot_image,
-    save_checkpoint, # worry about this after the model is able to overfit a small dataset
+    save_checkpoint,
     load_checkpoint
 )
 
@@ -29,12 +29,18 @@ LEARNING_RATE = 2e-5
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 BATCH_SIZE = 16 # increase if Collab/Kaggle can handle it
 SMALL_BATCH_SIZE = 4 # for small subset testing
-WEIGHT_DECAY = 0 # for testing that overfitting works
-EPOCHS = 100
+WEIGHT_DECAY = 5e-4
+EPOCHS = 135 
 NUM_WORKERS = 2
 PIN_MEMORY = True if torch.cuda.is_available() else False # only relevant for GPU usage
 LOAD_MODEL = False
-LOAD_MODEL_FILE = "overfit.pth.tar" # for testing purposes
+CHECKPOINT_DIR = "/content/drive/MyDrive/Projects/species-detector" 
+CHECKPOINT_FILE = f"{CHECKPOINT_DIR}/checkpoint.pth.tar"
+BEST_CHECKPOINT_FILE = f"{CHECKPOINT_DIR}/best_checkpoint.pth.tar"
+SAVE_MODEL = True
+CHECKPOINT_FREQ = 5
+MAP_FREQ = 5
+USE_FULL_DATASET = True
 
 # Allows us to input both the img and bounding boxes
 class Compose(object):
@@ -88,8 +94,15 @@ def main():
 
     loss_fn = YOLOLoss()
 
+    curr_epoch = 0
+    best_map = 0.0
+
     if LOAD_MODEL:
-        load_checkpoint(torch.load(LOAD_MODEL_FILE), model, optimizer)
+        l_checkpoint = torch.load(CHECKPOINT_FILE, map_location=DEVICE)
+        load_checkpoint(l_checkpoint, model, optimizer)
+        curr_epoch = l_checkpoint.get("epoch", -1) + 1
+        best_map = l_checkpoint.get("best_map", 0.0)
+        print(f"Starting from epochh {curr_epoch}, best mAP so far: {best_map:.4f}")
 
     train_dataset = VOCdataset(transform=transform)
 
@@ -101,11 +114,10 @@ def main():
         shuffle=True,
         drop_last=True
     )
-
-
+        
     # Small Dataset for Initial Testing:
     small_dataset = Subset(train_dataset, indices=list(range(8)))
-
+    
     small_loader = DataLoader(
         dataset=small_dataset,
         batch_size=SMALL_BATCH_SIZE,
@@ -115,18 +127,46 @@ def main():
         drop_last=True
     )
 
-    for epoch in range(EPOCHS):
-        pred_boxes, target_boxes = get_bboxes(
-            small_loader, model, iou_threshold=0.5, threshold=0.4, device=DEVICE
-        )
+    active_loader = train_loader if USE_FULL_DATASET else small_loader
 
-        mean_avg_prec = mean_average_precision(
-            pred_boxes, target_boxes, iou_threshold=0.5 # box_format="midpoint"
-        )
+    for epoch in range(curr_epoch, EPOCHS):
+        print(f"\nEpoch {epoch}/{EPOCHS-1}")
 
-        print(f"Train mAP: {mean_avg_prec}")
+        # Reduce frequency that mAP is recorded to reduce overhead
+        if epoch % MAP_FREQ == 0 or epoch == EPOCHS-1:
+            pred_boxes, target_boxes = get_bboxes(
+                active_loader, model, iou_threshold=0.5, threshold=0.4, device=DEVICE
+            )
 
-        train_fn(small_loader, model, optimizer, loss_fn)
+            mean_avg_prec = mean_average_precision(
+                pred_boxes, target_boxes, iou_threshold=0.5 # box_format="midpoint"
+            )
+            mean_avg_prec = float(mean_avg_prec)
+
+            print(f"Train mAP: {mean_avg_prec:.4f}")
+
+            # Update best
+            if mean_avg_prec > best_map:
+                best_map = mean_avg_prec
+                print(f"New best mAP: {best_map:.4f}")
+                best_checkpoint = {
+                    "state_dict": model.state_dict(),
+                    "optimizer": optimizer.state(),
+                    "epoch": epoch,
+                    "best_map": best_map,
+                }
+                save_checkpoint(best_checkpoint, filename=BEST_CHECKPOINT_FILE)
+
+        train_fn(active_loader, model, optimizer, loss_fn)
+
+        if SAVE_MODEL and (epoch % CHECKPOINT_FREQ == 0 or epoch == EPOCHS-1):
+            s_checkpoint = {
+                "state_dict": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "epoch": epoch,
+                "best_map": best_map,
+            }
+            save_checkpoint(s_checkpoint, filename=CHECKPOINT_FILE)
 
 if __name__ == "__main__":
     main()

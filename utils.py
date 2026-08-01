@@ -7,6 +7,7 @@ from collections import Counter
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import os
 
 def intersection_over_union(boxes_preds, boxes_labels):
     """ 
@@ -351,6 +352,7 @@ def cellboxes_to_boxes(out, S=7):
 
 def save_checkpoint(state, filename="my_checkpoint.pth.tar"):
     print("=> Saving checkpoint")
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
     torch.save(state, filename)
 
 
