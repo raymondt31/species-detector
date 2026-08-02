@@ -1,6 +1,7 @@
 # Ready for testing!
 
 import torch
+import os
 import torchvision.transforms as transforms
 import torch.optim as optim
 import torchvision.transforms.functional as FT
@@ -33,7 +34,6 @@ WEIGHT_DECAY = 5e-4
 EPOCHS = 135 
 NUM_WORKERS = 2
 PIN_MEMORY = True if torch.cuda.is_available() else False # only relevant for GPU usage
-LOAD_MODEL = False
 CHECKPOINT_DIR = "/content/drive/MyDrive/Projects/species-detector" 
 CHECKPOINT_FILE = f"{CHECKPOINT_DIR}/checkpoint.pth.tar"
 BEST_CHECKPOINT_FILE = f"{CHECKPOINT_DIR}/best_checkpoint.pth.tar"
@@ -97,12 +97,15 @@ def main():
     curr_epoch = 0
     best_map = 0.0
 
-    if LOAD_MODEL:
+    # safer alternative to manually flipping SAVE_MODEL on and off
+    if os.path.exists(CHECKPOINT_FILE):
         l_checkpoint = torch.load(CHECKPOINT_FILE, map_location=DEVICE)
         load_checkpoint(l_checkpoint, model, optimizer)
         curr_epoch = l_checkpoint.get("epoch", -1) + 1
         best_map = l_checkpoint.get("best_map", 0.0)
-        print(f"Starting from epochh {curr_epoch}, best mAP so far: {best_map:.4f}")
+        print(f"Starting from epoch {curr_epoch}, best mAP so far: {best_map:.4f}")
+    else:
+        print("No checkpoint found -- starting from epoch 0")
 
     train_dataset = VOCdataset(transform=transform)
 
@@ -151,7 +154,7 @@ def main():
                 print(f"New best mAP: {best_map:.4f}")
                 best_checkpoint = {
                     "state_dict": model.state_dict(),
-                    "optimizer": optimizer.state(),
+                    "optimizer": optimizer.state_dict(),
                     "epoch": epoch,
                     "best_map": best_map,
                 }
