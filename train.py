@@ -11,12 +11,8 @@ from torch.utils.data import Subset
 from model import Yolov1
 from dataset import VOCdataset
 from utils import(
-    intersection_over_union,
-    non_max_suppression, 
     mean_average_precision,
-    cellboxes_to_boxes,
     get_bboxes,
-    plot_image,
     save_checkpoint,
     load_checkpoint
 )
