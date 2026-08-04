@@ -6,7 +6,7 @@ import torchvision.transforms as transforms
 
 class VOCdataset(torch.utils.data.Dataset):
     # TODO: edit to take in S,B,C parameters
-    def __init__(self, S=7, B=2, C=20, transform=None):
+    def __init__(self, S=7, B=2, C=20, mode="train", transform=None):
         self.S = S
         self.B = B
         self.C = C
@@ -15,7 +15,7 @@ class VOCdataset(torch.utils.data.Dataset):
         self.transform = transform
 
         self.raw_dataset = torchvision.datasets.VOCDetection(
-            root="./data", year="2012", image_set="train", download=False # set this to true when first cloned to Colab 
+            root="./data", year="2012", image_set=mode, download=False # set this to true when first cloned to Colab 
         )
         self.obj_to_index = {
             'horse': 0, 'person': 1, 'bottle': 2,
@@ -97,7 +97,7 @@ class VOCdataset(torch.utils.data.Dataset):
 if __name__ == "__main__":
     print("Testing Dataset.py...")
 
-    dataset = VOCdataset(transform=None)
+    dataset = VOCdataset(mode="train", transform=None)
 
     img, target = dataset[31]
 
