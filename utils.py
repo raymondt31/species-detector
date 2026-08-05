@@ -278,7 +278,8 @@ def get_bboxes(
                 prob_threshold=threshold
             )
 
-            #if batch_idx == 0 and idx == 0:
+            # Uncomment for bbox visualization
+            # if batch_idx == 0 and idx == 0:
             #    plot_image(x[idx].permute(1,2,0).to("cpu"), nms_boxes)
             #    print(nms_boxes)
 
