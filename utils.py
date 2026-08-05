@@ -281,6 +281,7 @@ def get_bboxes(
             # Uncomment for bbox visualization
             # if batch_idx == 0 and idx == 0:
             #    plot_image(x[idx].permute(1,2,0).to("cpu"), nms_boxes)
+            #    plt.show()
             #    print(nms_boxes)
 
             for nms_box in nms_boxes:
