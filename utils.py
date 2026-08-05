@@ -1,7 +1,5 @@
 # Working!
 
-# TODO: consider adding a box_format option later
-
 import torch
 from collections import Counter
 import numpy as np
@@ -13,11 +11,11 @@ def intersection_over_union(boxes_preds, boxes_labels):
     """ 
     Given two vectors Box 1 = [x_center, y_center, width, height] and Box 2 = [x_center, y_center, width, height] find:
     1) Corners Coords:
-        - Top Left: (x1,y1) = (max(b1[x1], b2[x1]), max(b1[y1], b2[y1]))
-        - Bottom right: (x2,y2) = (min(b1[x2], b2[x2]), min(b1[y2], b2[y2]))
+        - Box 1: (x1,y1) = (x - w/2, y - h/2), (x2, y2) = (x + w/2, y + h/2)
+        - Box2: (x1,y1) = (x - w/2, y - h/2), (x2, y2) = (x + w/2, y + h/2)
     2) Calc areas
     3) Return IOU
-    * note: this only accepts boxes w/ midpoint coords; consider adding a box format option
+    * note: this only accepts boxes w/ midpoint coords
     """
 
     epsilon = 1e-6
@@ -59,7 +57,7 @@ def non_max_suppression(
     The point of non max supression is to eliminate redundant/duplicate boxes
     """
 
-    # predictions = [class, probability, x1, y1, x2, y2], [...], [...], ...]
+    # predictions = [class, probability, x_center, y_center, width, height], [...], [...], ...]
     assert type(bboxes) == list
         
     bboxes = [box for box in bboxes if box[1] > prob_threshold]
@@ -78,7 +76,6 @@ def non_max_suppression(
             or intersection_over_union(
                 torch.tensor(chosen_box[2:]),
                 torch.tensor(box[2:])
-                # consider adding box_format as well
             )
             < iou_threshold
         ]
@@ -108,7 +105,7 @@ def mean_average_precision(
     """
 
     # pred_boxes: [
-    #   [train_idx (img that this bounding box comes from), class_pred, prob_score, x1, y1, x2, y2], 
+    #   [train_idx (img that this bounding box comes from), class_pred, prob_score, x_center, y_center, width, height]], 
     #   [], 
     #   ...
     # ]
@@ -174,7 +171,6 @@ def mean_average_precision(
                 iou = intersection_over_union(
                     torch.tensor(detection[3:]),
                     torch.tensor(gt[3:])
-                    # consider adding box format
                 )
             
                 if iou > best_iou:
@@ -323,8 +319,8 @@ def convert_cellboxes(predictions, S=7):
     cell_indices = torch.arange(7).repeat(batch_size, 7, 1).unsqueeze(-1)
     x = 1 / S * (best_boxes[..., :1] + cell_indices)
     y = 1 / S * (best_boxes[..., 1:2] + cell_indices.permute(0, 2, 1, 3))
-    w_y = 1 / S * best_boxes[..., 2:4]
-    converted_bboxes = torch.cat((x, y, w_y), dim=-1)
+    w_h = best_boxes[..., 2:4]
+    converted_bboxes = torch.cat((x, y, w_h), dim=-1)
     predicted_class = predictions[..., :20].argmax(-1).unsqueeze(-1)
     best_confidence = torch.max(predictions[..., 20], predictions[..., 25]).unsqueeze(
         -1
@@ -354,6 +350,7 @@ def save_checkpoint(state, filename="my_checkpoint.pth.tar"):
     print("=> Saving checkpoint")
     os.makedirs(os.path.dirname(filename), exist_ok=True)
     torch.save(state, filename)
+
 
 def load_checkpoint(checkpoint, model, optimizer=None):
     print("=> Loading checkpoint")
