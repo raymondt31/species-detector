@@ -214,7 +214,12 @@ def mean_average_precision(
 
 def plot_image(image, boxes):
     """Plots predicted bounding boxes on the image"""
-    im = np.array(image)
+    if isinstance(image, torch.Tensor):
+        im = image.detach().cpu().numpy()
+    else:
+        im = np.array(image)
+
+    im = np.clip(im, 0, 1)
     height, width, _ = im.shape
 
     # Create figure and axes
@@ -242,6 +247,7 @@ def plot_image(image, boxes):
         # Add the patch to the Axes
         ax.add_patch(rect)
 
+    plt.savefig("eval_sample.png", bbox_inches="tight")
     plt.show()
 
 def get_bboxes(
@@ -281,7 +287,6 @@ def get_bboxes(
             # Uncomment for bbox visualization
             # if batch_idx == 0 and idx == 0:
             #    plot_image(x[idx].permute(1,2,0).to("cpu"), nms_boxes)
-            #    plt.show()
             #    print(nms_boxes)
 
             for nms_box in nms_boxes:
