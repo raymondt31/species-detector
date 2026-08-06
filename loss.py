@@ -17,9 +17,19 @@ class YOLOLoss(nn.Module):
     def forward(self, predictions, target):
         predictions = predictions.reshape(-1, self.S, self.S, self.C + self.B * 5)
 
-        # calculate IOUs
-        iou1 = intersection_over_union(predictions[..., 21:25], target[..., 21:25])
-        iou2 = intersection_over_union(predictions[..., 26:30], target[..., 21:25])
+        pred_box1 = predictions[..., 21:25].clone()
+        pred_box2 = predictions[..., 26:30].clone()
+        target_box = target[..., 21:25].clone()
+
+        # fix: convert w and h to cell-relative by multiplying by S
+        # before, (x, y) and (w, h) were using diff coordinate systems to calculate IOU
+        pred_box1[..., 2:4] = pred_box1[..., 2:4] * self.S
+        pred_box2[..., 2:4] = pred_box2[..., 2:4] * self.S
+        target_box[..., 2:4] = target_box[..., 2:4] * self.S
+
+        iou1 = intersection_over_union(pred_box1, target_box)
+        iou2 = intersection_over_union(pred_box2, target_box)
+
         ious = torch.cat((iou1.unsqueeze(0), iou2.unsqueeze(0)), dim=0)
         iou_max, best_box = torch.max(ious, dim=0)
         exists_box = target[..., 20].unsqueeze(3) # I_obji
@@ -95,8 +105,8 @@ class YOLOLoss(nn.Module):
             + class_loss
         )
 
-        return loss
-    
+        # normalize bc loss is batch-cumulative
+        return loss / predictions.shape[0]
 
 if __name__ == "__main__":
     print("Testing loss function...")
