@@ -47,7 +47,7 @@ if __name__ == "__main__":
         loader=eval_loader,
         model=model,
         iou_threshold=0.5,
-        threshold=0.4,
+        threshold=0.4, # may be culprit behind low mAP
         device=DEVICE,
     )
 
