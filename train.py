@@ -2,6 +2,7 @@
 
 import torch
 import os
+import wandb
 import torchvision.transforms as transforms
 import torch.optim as optim
 import torchvision.transforms.functional as FT
@@ -89,9 +90,19 @@ def train_fn(train_loader, model, optimizer, loss_fn):
         # Update progress bar
         loop.set_postfix(loss=loss.item())
 
-    print(f"Mean loss was {sum(mean_loss)/len(mean_loss)}")
+    avg_loss = sum(mean_loss)/len(mean_loss)
+    print(f"Mean loss was {avg_loss}")
+    return avg_loss
 
 def main():
+    run_id = "yolov1-sd"
+
+    wandb.init(
+        project="yolov1-species-detector",
+        id=run_id,
+        resume="allow",
+    )
+
     model = Yolov1(split_size=7, num_boxes=2, num_classes=20).to(DEVICE)
 
     optimizer = optim.Adam(
@@ -156,6 +167,8 @@ def main():
 
     active_loader = train_loader # if USE_FULL_DATASET else small_loader
 
+    current_map = best_map
+
     for epoch in range(curr_epoch, EPOCHS):
         print(f"\nEpoch {epoch}/{EPOCHS-1}")
 
@@ -168,9 +181,10 @@ def main():
             mean_avg_prec = mean_average_precision(
                 pred_boxes, target_boxes, iou_threshold=0.5 # box_format="midpoint"
             )
-            mean_avg_prec = float(mean_avg_prec)
 
-            print(f"Validation mAP: {mean_avg_prec:.4f}")
+            current_map = float(mean_avg_prec)
+
+            print(f"Validation mAP: {current_map:.4f}")
 
             # Update best
             if mean_avg_prec > best_map:
@@ -186,7 +200,14 @@ def main():
 
             scheduler.step(mean_avg_prec)
 
-        train_fn(active_loader, model, optimizer, loss_fn) 
+        train_loss = train_fn(active_loader, model, optimizer, loss_fn) 
+
+        wandb.log({
+            "epoch": epoch,
+            "train_loss": train_loss,
+            "val_mAP": current_map,
+            "learning_rate": optimizer.param_groups[0]["lr"]
+        })
 
         if SAVE_MODEL and (epoch % CHECKPOINT_FREQ == 0 or epoch == EPOCHS-1):
             s_checkpoint = {
