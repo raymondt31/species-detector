@@ -2,6 +2,7 @@
 
 import torch
 import torch.nn as nn
+from torchvision.models import resnet50, ResNet50_Weights
 
 # (kernal_size, num_filters, stride, padding)
 ARCHITECTURE_CONFIG = [
@@ -39,61 +40,84 @@ class CNNBlock(nn.Module):
 class Yolov1(nn.Module):
     def __init__(self, in_channels=3, **kwargs):
         super(Yolov1, self).__init__()
-        self.architecture = ARCHITECTURE_CONFIG
+
+        # Unused: self.architecture = ARCHITECTURE_CONFIG
+
         self.in_channels = in_channels
-        self.darknet = self._create_conv_layers(self.architecture)
+        self.darknet = self._create_rn50_layers()
         self.fcs = self._create_fcs(**kwargs)
     
     def forward(self, x):
         x = self.darknet(x)
-        return self.fcs(torch.flatten(x, start_dim=1))
+        return self.fcs(x)
     
-    def _create_conv_layers(self, architecture):
+    def _create_rn50_layers(self):
+
         layers = []
-        in_channels = self.in_channels
-        
-        for x in architecture:
-            if type(x) == tuple: # single use conv layer
-                layers += [
-                    CNNBlock(
-                        in_channels, 
-                        x[1], 
-                        kernel_size=x[0],
-                        stride=x[2],
-                        padding=x[3],
-                    )
-                ]
-                in_channels = x[1]
 
-            elif type(x) == str: # maxpool
-                layers += [
-                    nn.MaxPool2d(
-                        kernel_size=2, stride=2
-                    )
-                ]
-            
-            elif type(x) == list: # repeated layers
-                repeated_layers = x[:-1]
-                num_repeat = x[-1]
+        # Cut off avgpool and fc layers from resnet50
+        weights = ResNet50_Weights.IMAGENET1K_V2
+        model = resnet50(weights)
+        ch = list(model.children())
+        layers = list(ch[:-2])
 
-                for _ in range(num_repeat):
-                    for layer in repeated_layers:
-                        kernel_size, out_channels, stride, padding = layer
+        # Downsample from 14 x 14 to 7 x 7 and compress channels down from 2048 to 1024
+        conv = nn.Conv2d(
+            in_channels=2048, 
+            out_channels=1024, # for channel compresison
+            kernel_size=1,
+            stride=2, # for downsampling
+        )
+        layers.append(conv)
 
-                        layers += [
-                            CNNBlock(
-                                in_channels,
-                                out_channels,
-                                kernel_size=kernel_size,
-                                stride=stride,
-                                padding=padding
-                            )
-                        ]
-
-                        # Ensure next layer's input matches this layer's output 
-                        in_channels = out_channels
-        
         return nn.Sequential(*layers)
+
+    # def _create_conv_layers(self, architecture):
+    #     layers = []
+    #     in_channels = self.in_channels
+        
+    #     for x in architecture:
+    #         if type(x) == tuple: # single use conv layer
+    #             layers += [
+    #                 CNNBlock(
+    #                     in_channels, 
+    #                     x[1], 
+    #                     kernel_size=x[0],
+    #                     stride=x[2],
+    #                     padding=x[3],
+    #                 )
+    #             ]
+    #             in_channels = x[1]
+
+    #         elif type(x) == str: # maxpool
+    #             layers += [
+    #                 nn.MaxPool2d(
+    #                     kernel_size=2, stride=2
+    #                 )
+    #             ]
+            
+    #         elif type(x) == list: # repeated layers
+    #             repeated_layers = x[:-1]
+    #             num_repeat = x[-1]
+
+    #             for _ in range(num_repeat):
+    #                 for layer in repeated_layers:
+    #                     kernel_size, out_channels, stride, padding = layer
+
+    #                     layers += [
+    #                         CNNBlock(
+    #                             in_channels,
+    #                             out_channels,
+    #                             kernel_size=kernel_size,
+    #                             stride=stride,
+    #                             padding=padding
+    #                         )
+    #                     ]
+
+    #                     # Ensure next layer's input matches this layer's output 
+    #                     in_channels = out_channels
+        
+    #     return nn.Sequential(*layers)
     
     # Default for VOC
     def _create_fcs(self, split_size=7, num_boxes=2, num_classes=20):
@@ -106,10 +130,28 @@ class Yolov1(nn.Module):
             nn.Linear(496, S * S * (C + B * 5)) # (S, S, 30) for VOC
         )      
 
+    # Freezing and unfreezing to prevent huge gradient rewriting pretrained
+    def freeze_backbone(self):
+
+        # Freeze all but self-added conv layer
+        for p in self.darknet[:-1].parameters(): 
+            p.requires_grad = False
+
+    def unfreeze_backbone(self):
+        for p in self.darknet.parameters():
+            p.requires_grad = True
+
 if __name__ == "__main__":
+    x = torch.randn((2, 3, 448, 448)) # raw image
+
+    print("Testing resnet50 shape...")
+    rn50_model = resnet50(ResNet50_Weights.IMAGENET1K_V2)
+    ch = list(rn50_model.children())
+    rn50_model = nn.Sequential(*ch[:-2])
+    print(rn50_model(x).shape)
+
     print("Testing Model.py...")
     model = Yolov1()
-    x = torch.randn((2, 3, 448, 448)) # raw image
     print(model(x).shape)
 
 """ 
