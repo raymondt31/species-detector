@@ -130,7 +130,7 @@ class Yolov1(nn.Module):
             nn.Linear(496, S * S * (C + B * 5)) # (S, S, 30) for VOC
         )      
 
-    # Freezing and unfreezing to prevent huge gradient rewriting pretrained
+    # Freezing and unfreezing to prevent huge gradients rewriting pretrained weights
     def freeze_backbone(self):
 
         # Freeze all but self-added conv layer
