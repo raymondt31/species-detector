@@ -38,6 +38,7 @@ SAVE_MODEL = True
 CHECKPOINT_FREQ = 5
 MAP_FREQ = 5
 USE_FULL_DATASET = True
+WARMUP_EPOCHS = 5
 
 # Allows us to input both the img and bounding boxes
 class Compose(object):
@@ -171,6 +172,26 @@ def main():
 
     for epoch in range(curr_epoch, EPOCHS):
         print(f"\nEpoch {epoch}/{EPOCHS-1}")
+
+        # Unfreeze weights and adjust hyperparams after warmup
+        if epoch == WARMUP_EPOCHS:
+            print("Warmup complete. Unfreezing backbone and adjusting learning rate.")
+            model.unfreeze_backbone()
+
+            # Reinsantiate and lower the lr
+            optimizer = torch.optim.Adam(
+                model.parameters(), 
+                lr=1e-5,
+                weight_decay=WEIGHT_DECAY
+            )
+
+            # Reinsantiate scheduler to account for updated optimizer
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer,
+                mode="max",
+                factor=0.5,
+                patience=2, 
+            )
 
         # Reduce frequency that mAP is recorded to reduce overhead
         if epoch % MAP_FREQ == 0 or epoch == EPOCHS-1:

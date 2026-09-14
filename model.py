@@ -46,6 +46,7 @@ class Yolov1(nn.Module):
         self.in_channels = in_channels
         self.darknet = self._create_rn50_layers()
         self.fcs = self._create_fcs(**kwargs)
+        self.freeze_backbone()
     
     def forward(self, x):
         x = self.darknet(x)
