@@ -96,12 +96,12 @@ def train_fn(train_loader, model, optimizer, loss_fn):
     return avg_loss
 
 def main():
-    run_id = "yolov1-sd"
 
     wandb.init(
         project="yolov1-species-detector",
-        id=run_id,
-        resume="allow",
+        name="[insert_name]",
+        # id= [run_ID], UNCOMMENT when resuming a run
+        # resume="allow",
     )
 
     model = Yolov1(split_size=7, num_boxes=2, num_classes=20).to(DEVICE)
