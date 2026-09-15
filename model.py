@@ -125,10 +125,10 @@ class Yolov1(nn.Module):
         S, B, C = split_size, num_boxes, num_classes
         return nn.Sequential(
             nn.Flatten(),
-            nn.Linear(1024 * S * S, 496), # should be 4096 => change based on compute power
+            nn.Linear(1024 * S * S, 2048), # should be 4096 => change based on compute power
             nn.Dropout(0.5), 
             nn.LeakyReLU(0.1),
-            nn.Linear(496, S * S * (C + B * 5)) # (S, S, 30) for VOC
+            nn.Linear(2048, S * S * (C + B * 5)) # (S, S, 30) for VOC
         )      
 
     # Freezing and unfreezing to prevent huge gradients rewriting pretrained weights
