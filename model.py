@@ -142,6 +142,14 @@ class Yolov1(nn.Module):
         for p in self.darknet.parameters():
             p.requires_grad = True
 
+    def train(self, mode=True):
+        super(Yolov1, self).train(mode)
+
+        # Force Batchnorm layers in darknet backbone to stay in eval => prevent running mean and variance from being updated
+        for module in self.darknet.modules():
+            if isinstance(module, nn.BatchNorm2d):
+                module.eval()
+
 if __name__ == "__main__":
     x = torch.randn((2, 3, 448, 448)) # raw image
 
