@@ -27,7 +27,7 @@ LEARNING_RATE = 2e-5
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 BATCH_SIZE = 16 # increase if Collab/Kaggle can handle it
 SMALL_BATCH_SIZE = 4 # for small subset testing
-WEIGHT_DECAY = 5e-4
+WEIGHT_DECAY = 1e-4
 EPOCHS = 135 
 NUM_WORKERS = 2
 PIN_MEMORY = True if torch.cuda.is_available() else False # only relevant for GPU usage
@@ -181,11 +181,11 @@ def main():
             model.unfreeze_backbone()
 
             # Reinsantiate and lower the lr
-            optimizer = torch.optim.Adam(
-                model.parameters(), 
-                lr=1e-5,
-                weight_decay=WEIGHT_DECAY
-            )
+            optimizer = torch.optim.Adam([
+                # model.parameters(),
+                {"params": model.darknet.parameters(), "lr": 1e-5}, # Protect resnet
+                {"params": model.fcs.parameters(), "lr": 1e-4} # Train the head more rigorously
+            ], weight_decay=WEIGHT_DECAY)
 
             # Reinsantiate scheduler to account for updated optimizer
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
