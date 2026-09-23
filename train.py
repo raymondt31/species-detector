@@ -123,16 +123,39 @@ def main():
 
     curr_epoch = 0
     best_map = 0.0
+    l_checkpoint = None
 
     # safer alternative to manually flipping SAVE_MODEL on and off
     if os.path.exists(CHECKPOINT_FILE):
         l_checkpoint = torch.load(CHECKPOINT_FILE, map_location=DEVICE)
-        load_checkpoint(l_checkpoint, model, optimizer)
         curr_epoch = l_checkpoint.get("epoch", -1) + 1
         best_map = l_checkpoint.get("best_map", 0.0)
         print(f"Starting from epoch {curr_epoch}, best mAP so far: {best_map:.4f}")
     else:
         print("No checkpoint found -- starting from epoch 0")
+
+    # if resuming, build optimizer w/ diff parameters
+    if curr_epoch >= WARMUP_EPOCHS:
+        print("Resuming post-warmup: Unfreezing backbone and initializing differential optimizer groups.")
+        model.unfreeze_backbone()
+        optimizer = optim.Adam([
+            {"params": model.darknet.parameters(), "lr": 1e-5},
+            {"params": model.fcs.parameters(), "lr": 1e-4}
+        ], weight_decay=1e-4)
+    else:
+        optimizer = optim.Adam(
+            model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY
+        )
+
+    if l_checkpoint is not None:
+        load_checkpoint(l_checkpoint, model, optimizer)
+
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode="max",
+        factor=0.5,
+        patience=2,
+    )
 
     train_dataset = VOCdataset(mode="train", transform=train_transform)
 
