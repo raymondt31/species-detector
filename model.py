@@ -46,6 +46,7 @@ class Yolov1(nn.Module):
         self.in_channels = in_channels
         self.darknet = self._create_rn50_layers()
         self.fcs = self._create_fcs(**kwargs)
+        self.backbone_frozen = True # Keep track of frozen state for BN
         self.freeze_backbone()
     
     def forward(self, x):
@@ -137,18 +138,21 @@ class Yolov1(nn.Module):
         # Freeze all but self-added conv layer
         for p in self.darknet[:-1].parameters(): 
             p.requires_grad = False
+        self.backbone_frozen = True
 
     def unfreeze_backbone(self):
         for p in self.darknet.parameters():
             p.requires_grad = True
+        self.backbone_frozen = False
 
     def train(self, mode=True):
         super(Yolov1, self).train(mode)
 
         # Force Batchnorm layers in darknet backbone to stay in eval => prevent running mean and variance from being updated
-        for module in self.darknet.modules():
-            if isinstance(module, nn.BatchNorm2d):
-                module.eval()
+        if self.backbone_frozen:
+            for module in self.darknet.modules():
+                if isinstance(module, nn.BatchNorm2d):
+                    module.eval()
 
 if __name__ == "__main__":
     x = torch.randn((2, 3, 448, 448)) # raw image
