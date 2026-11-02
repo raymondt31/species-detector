@@ -1,12 +1,13 @@
-# Working!
-
 import torchvision
 import torch
 import torchvision.transforms as transforms
+from augment import (
+    train_transform,
+    val_transform,
+)
 
 class VOCdataset(torch.utils.data.Dataset):
-    # TODO: edit to take in S,B,C parameters
-    def __init__(self, S=7, B=2, C=20, mode="train", transform=None):
+    def __init__(self, S=7, B=2, C=20, year=2012, mode="train",  transform=None):
         self.S = S
         self.B = B
         self.C = C
@@ -15,7 +16,7 @@ class VOCdataset(torch.utils.data.Dataset):
         self.transform = transform
 
         self.raw_dataset = torchvision.datasets.VOCDetection(
-            root="./data", year="2012", image_set=mode, download=False # set this to true when first cloned to Colab 
+            root="./data", year=year, image_set=mode, download=False # set this to true when first cloned to Colab 
         )
         self.obj_to_index = {
             'horse': 0, 'person': 1, 'bottle': 2,
