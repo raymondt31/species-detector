@@ -203,11 +203,13 @@ def main():
             print("Warmup complete. Unfreezing backbone and adjusting learning rate.")
             model.unfreeze_backbone()
 
+            head_params = list(model.neck.parameters()) + list(model.fcs.parameters())
+
             # Reinsantiate and lower the lr
             optimizer = torch.optim.Adam([
                 # model.parameters(),
                 {"params": model.darknet.parameters(), "lr": 1e-5}, # Protect resnet
-                {"params": model.fcs.parameters(), "lr": 1e-4} # Train the head more rigorously
+                {"params": head_params, "lr": 1e-4} # Train the head more rigorously
             ], weight_decay=WEIGHT_DECAY)
 
             # Reinsantiate scheduler to account for updated optimizer
