@@ -1,14 +1,9 @@
-# Ready for testing!
-
 import torch
 import os
 import wandb
-import torchvision.transforms as transforms
 import torch.optim as optim
-import torchvision.transforms.functional as FT
 from tqdm import tqdm
-from torch.utils.data import DataLoader
-from torch.utils.data import Subset
+from torch.utils.data import DataLoader, ConcatDataset
 from model import Yolov1
 from dataset import VOCdataset
 from utils import(
@@ -136,7 +131,10 @@ def main():
         patience=2,
     )
 
-    train_dataset = VOCdataset(mode="train", transform=train_transform)
+    train_dataset = ConcatDataset([
+        VOCdataset(year="2007", mode="trainval", transform=train_transform),
+        VOCdataset(year="2012", mode="trainval", transform=train_transform),
+    ])
 
     train_loader = DataLoader(
         dataset=train_dataset,
@@ -147,7 +145,7 @@ def main():
         drop_last=True
     )
 
-    val_dataset = VOCdataset(mode="val", transform=val_transform)
+    val_dataset = VOCdataset(year="2007", mode="test", transform=val_transform)
 
     val_loader = DataLoader(
         dataset=val_dataset,
