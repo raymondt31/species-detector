@@ -17,6 +17,10 @@ from utils import(
     save_checkpoint,
     load_checkpoint
 )
+from augment import (
+    train_transform,
+    val_transform,
+)
 
 from loss import YOLOLoss
 
@@ -39,31 +43,6 @@ CHECKPOINT_FREQ = 5
 MAP_FREQ = 5
 USE_FULL_DATASET = True
 WARMUP_EPOCHS = 5
-
-# Allows us to input both the img and bounding boxes
-class Compose(object):
-    def __init__(self, transforms):
-        self.transforms = transforms
-
-    # Note that this will fail if data augmentation is implemented
-    def __call__(self, img, bboxes):
-        for t in self.transforms:
-            img, bboxes = t(img), bboxes
-
-        return img, bboxes
-
-train_transform = Compose([
-    transforms.Resize((448, 448)), 
-    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
-    transforms.ToTensor(), 
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
-
-val_transform = Compose([
-    transforms.Resize((448, 448)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
 
 def train_fn(train_loader, model, optimizer, loss_fn):
     loop = tqdm(train_loader, leave=True) # progress bar
