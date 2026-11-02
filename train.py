@@ -1,6 +1,7 @@
 import torch
 import os
 import wandb
+import math
 import torch.optim as optim
 from tqdm import tqdm
 from torch.utils.data import DataLoader, ConcatDataset
@@ -22,28 +23,59 @@ from loss import YOLOLoss
 seed = 123
 torch.manual_seed(seed)
 
-LEARNING_RATE = 2e-5
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-BATCH_SIZE = 16 # increase if Collab/Kaggle can handle it
-SMALL_BATCH_SIZE = 4 # for small subset testing
+# --- optim parameters --- 
+BACKBONE_LR = 1e-5
+HEAD_LR = 1e-4 # for the neck and FC head
+MIN_LR_FRAC = 0.01 # LR decays to this fraction of starting
+LR_WARMUP_ITERS = 1000 # linear ramp for ~1 epoch
+FREEZE_EPOCHS = 3 
 WEIGHT_DECAY = 1e-4
-EPOCHS = 135 
+EPOCHS = 45 # '07+'12 is ~3x the old dataset, so train 1/3 of the time
+
+BATCH_SIZE = 16 # increase if Collab/Kaggle can handle it
 NUM_WORKERS = 2
 PIN_MEMORY = True if torch.cuda.is_available() else False # only relevant for GPU usage
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
 CHECKPOINT_DIR = "/content/drive/MyDrive/Projects/species-detector/Checkpoints" 
 CHECKPOINT_FILE = f"{CHECKPOINT_DIR}/checkpoint.pth.tar"
 BEST_CHECKPOINT_FILE = f"{CHECKPOINT_DIR}/best_checkpoint.pth.tar"
 SAVE_MODEL = True
 CHECKPOINT_FREQ = 5
 MAP_FREQ = 5
-USE_FULL_DATASET = True
-WARMUP_EPOCHS = 5
+# --------------------------
 
-def train_fn(train_loader, model, optimizer, loss_fn):
+def lr_factor(it, total_iters):
+    """NEW: Calc multiplier to the LR at iteration 'it', then cosine decays instead of step"""
+
+    # Decide how many iters to spend on warmup
+    warmup = min(LR_WARMUP_ITERS, max(1, total_iters // 10))
+   
+    if it < warmup:
+        return (it + 1) / warmup
+
+    # How far through cosine decay
+    t = min(
+        1.0,
+        (it - warmup) / max(1, total_iters - warmup)
+    )
+
+    # return cosine decay via formula
+    return MIN_LR_FRAC + (1 - MIN_LR_FRAC) * 0.5 * (
+        1 + math.cos(math.pi * t)
+    )
+
+def train_fn(train_loader, model, optimizer, loss_fn, base_lrs, start_iter, total_iters):
+    model.train() 
     loop = tqdm(train_loader, leave=True) # progress bar
     mean_loss = []
 
     for batch_idx, (x, y) in enumerate(loop):
+
+        # set learning rate of this iteration
+        factor = lr_factor(start_iter + batch_idx, total_iters)
+        for group, base in zip(optimizer.param_groups, base_lrs):
+            group["lr"] = base * factor
         
         # move data to GPU/CPU
         x, y = x.to(DEVICE), y.to(DEVICE)
@@ -82,55 +114,33 @@ def main():
 
     model = Yolov1(split_size=7, num_boxes=2, num_classes=20).to(DEVICE)
 
-    optimizer = optim.Adam(
-        model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY
-    )
+    # Fix one optimizer for the whole run
+    head_params = list(model.neck.parameters()) + list(model.fcs.parameters())
+    base_lrs = [BACKBONE_LR, HEAD_LR]
 
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
-        mode="max",
-        factor=0.5,
-        patience=2, # only drop LR after two mAP checks with no improvment
-    )
+    optimizer = optim.Adam([
+        {"params": list(model.darknet.parameters()), "lr": BACKBONE_LR},
+        {"params": head_params, "lr": HEAD_LR},
+    ], weight_decay=WEIGHT_DECAY)
 
     loss_fn = YOLOLoss()
 
     curr_epoch = 0
     best_map = 0.0
-    l_checkpoint = None
 
     # safer alternative to manually flipping SAVE_MODEL on and off
     if os.path.exists(CHECKPOINT_FILE):
         l_checkpoint = torch.load(CHECKPOINT_FILE, map_location=DEVICE)
         curr_epoch = l_checkpoint.get("epoch", -1) + 1
         best_map = l_checkpoint.get("best_map", 0.0)
+        if curr_epoch >= FREEZE_EPOCHS:
+            model.unfreeze_backbone()
+        load_checkpoint(l_checkpoint, model, optimizer)
         print(f"Starting from epoch {curr_epoch}, best mAP so far: {best_map:.4f}")
     else:
         print("No checkpoint found -- starting from epoch 0")
 
-    # if resuming, build optimizer w/ diff parameters
-    if curr_epoch >= WARMUP_EPOCHS:
-        print("Resuming post-warmup: Unfreezing backbone and initializing differential optimizer groups.")
-        model.unfreeze_backbone()
-        optimizer = optim.Adam([
-            {"params": model.darknet.parameters(), "lr": 1e-5},
-            {"params": model.fcs.parameters(), "lr": 1e-4}
-        ], weight_decay=1e-4)
-    else:
-        optimizer = optim.Adam(
-            model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY
-        )
-
-    if l_checkpoint is not None:
-        load_checkpoint(l_checkpoint, model, optimizer)
-
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
-        mode="max",
-        factor=0.5,
-        patience=2,
-    )
-
+    # Concate '07 and '12
     train_dataset = ConcatDataset([
         VOCdataset(year="2007", mode="trainval", transform=train_transform),
         VOCdataset(year="2012", mode="trainval", transform=train_transform),
@@ -168,80 +178,69 @@ def main():
     #     drop_last=True
     # )
 
-    active_loader = train_loader # if USE_FULL_DATASET else small_loader
-
-    current_map = best_map
+    iters_per_epoch = len(train_loader)
+    total_iters = EPOCHS * iters_per_epoch
 
     for epoch in range(curr_epoch, EPOCHS):
         print(f"\nEpoch {epoch}/{EPOCHS-1}")
 
         # Unfreeze weights and adjust hyperparams after warmup
-        if epoch == WARMUP_EPOCHS:
+        if epoch == FREEZE_EPOCHS:
             print("Warmup complete. Unfreezing backbone and adjusting learning rate.")
             model.unfreeze_backbone()
 
-            head_params = list(model.neck.parameters()) + list(model.fcs.parameters())
+        train_loss = train_fn(
+            train_loader, 
+            model, 
+            optimizer, 
+            loss_fn,
+            base_lrs,
+            epoch * iters_per_epoch,
+            total_iters,
+        ) 
 
-            # Reinsantiate and lower the lr
-            optimizer = torch.optim.Adam([
-                # model.parameters(),
-                {"params": model.darknet.parameters(), "lr": 1e-5}, # Protect resnet
-                {"params": head_params, "lr": 1e-4} # Train the head more rigorously
-            ], weight_decay=WEIGHT_DECAY)
+        log = {
+            "epoch": epoch,
+            "train_loss": train_loss,
+            "lr_backbone": optimizer.param_groups[0]["lr"],
+            "lr_head": optimizer.param_groups[1]["lr"],
+        }
 
-            # Reinsantiate scheduler to account for updated optimizer
-            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer,
-                mode="max",
-                factor=0.5,
-                patience=2, 
-            )
-
-        # Reduce frequency that mAP is recorded to reduce overhead
-        if epoch % MAP_FREQ == 0 or epoch == EPOCHS-1:
+        # Train epoch then score, so the last epoch isn't neglected
+        if (epoch + 1) % MAP_FREQ == 0 or epoch == EPOCHS-1:
             pred_boxes, target_boxes = get_bboxes(
                 val_loader, model, iou_threshold=0.5, threshold=0.01, device=DEVICE
             )
 
-            mean_avg_prec = mean_average_precision(
-                pred_boxes, target_boxes, iou_threshold=0.5 # box_format="midpoint"
-            )
-
-            current_map = float(mean_avg_prec)
+            current_map = float(mean_average_precision(
+                pred_boxes, target_boxes, iou_threshold=0.5
+            ))
 
             print(f"Validation mAP: {current_map:.4f}")
+            log["val_mAP"] = current_map
 
-            # Update best
-            if mean_avg_prec > best_map:
-                best_map = mean_avg_prec
+            # Change: best_map is just kept for monitoring purposes, we will report the final epoch instead
+            if current_map > best_map:
+                best_map = current_map
                 print(f"New best mAP: {best_map:.4f}")
-                best_checkpoint = {
-                    "state_dict": model.state_dict(),
-                    "optimizer": optimizer.state_dict(),
-                    "epoch": epoch,
-                    "best_map": best_map,
-                }
-                save_checkpoint(best_checkpoint, filename=BEST_CHECKPOINT_FILE)
 
-            scheduler.step(mean_avg_prec)
+                if SAVE_MODEL:
+                    save_checkpoint({
+                        "state_dict": model.state_dict(),
+                        "optimizer": optimizer.state_dict(),
+                        "epoch": epoch,
+                        "best_map": best_map
+                    }, filename=BEST_CHECKPOINT_FILE)
 
-        train_loss = train_fn(active_loader, model, optimizer, loss_fn) 
+        wandb.log(log)
 
-        wandb.log({
-            "epoch": epoch,
-            "train_loss": train_loss,
-            "val_mAP": current_map,
-            "learning_rate": optimizer.param_groups[0]["lr"]
-        })
-
-        if SAVE_MODEL and (epoch % CHECKPOINT_FREQ == 0 or epoch == EPOCHS-1):
-            s_checkpoint = {
+        if SAVE_MODEL and ((epoch + 1) % CHECKPOINT_FREQ == 0 or epoch == EPOCHS - 1):
+            save_checkpoint({
                 "state_dict": model.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "epoch": epoch,
-                "best_map": best_map,
-            }
-            save_checkpoint(s_checkpoint, filename=CHECKPOINT_FILE)
+                "best_map": best_map
+            }, filename=CHECKPOINT_FILE)
 
 if __name__ == "__main__":
     main()
