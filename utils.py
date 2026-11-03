@@ -2,9 +2,6 @@
 
 import torch
 from collections import Counter
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 import os
 
 def intersection_over_union(boxes_preds, boxes_labels):
@@ -47,7 +44,6 @@ def intersection_over_union(boxes_preds, boxes_labels):
     # 1e-6 padding to prevent NaN w/ div by 0 and exploding denominators
     return intersection / (box1_area + box2_area - intersection + epsilon)
 
-#TODO: Implement the following
 def non_max_suppression(
         bboxes,
         iou_threshold,
@@ -112,6 +108,9 @@ def mean_average_precision(
     average_precisions = []
     epsilon = 1e-6
 
+    # Don't count objects explicitly labeled default
+    is_difficult = lambda gt: len(gt) > 7 and gt[7] == 1
+
     for c in range(num_classes):
         detections = []
         ground_truths = []
@@ -145,10 +144,14 @@ def mean_average_precision(
         # False positives
         FP = torch.zeros(len(detections))
 
-        total_true_bboxes = len(ground_truths)
+        total_true_bboxes = len([gt for gt in ground_truths if not is_difficult(gt)])
 
         # Early exit -- may be holding mAP back for small datasets
         if total_true_bboxes == 0:
+            continue
+
+        if len(detections) == 0:
+            average_precisions.append(torch.tensor(0.))
             continue
         
         # loop through every prediction the model made for specific class, c,
@@ -180,6 +183,10 @@ def mean_average_precision(
             # second condition is incase no gts
             if best_iou > iou_threshold and best_gt_idx != -1:
 
+                # Skip the difficult images
+                if is_difficult(ground_truth_img[best_gt_idx]):
+                    continue
+
                 # check that this gt box has not been marked
                 if amount_bboxes[detection[0]][best_gt_idx] == 0:
                     TP[detection_idx] = 1
@@ -199,9 +206,12 @@ def mean_average_precision(
         recalls = TP_cumsum / (total_true_bboxes + epsilon)
         precisions = torch.divide(TP_cumsum, (TP_cumsum + FP_cumsum + epsilon))
         
-        # start at point (0,1) for integration purposes
-        precisions = torch.cat((torch.tensor([1]), precisions)) # y-axis
-        recalls = torch.cat((torch.tensor([0]), recalls)) # x-axis
+        # VOC precision envelope: at each recall, use the best precision at that recall or higher
+        precisions = torch.flip(torch.cummax(torch.flip(precisions, [0]), dim=0).values, [0])
+
+        # start the curve at recall 0, at the first point's precision
+        precisions = torch.cat((precisions[:1], precisions)) # y-axis
+        recalls = torch.cat((torch.tensor([0.]), recalls)) # x-axis
 
         # trapezoidal integration over precisions and recalls
         average_precisions.append(torch.trapz(precisions, recalls))
@@ -212,146 +222,146 @@ def mean_average_precision(
 # The following QOL functions were all mostly copied directly from Aladdin Persson
 # https://github.com/aladdinpersson/Machine-Learning-Collection/blob/master/ML/Pytorch/object_detection/YOLO/utils.py
 
-def plot_image(image, boxes):
-    """Plots predicted bounding boxes on the image"""
-    if isinstance(image, torch.Tensor):
-        im = image.detach().cpu().numpy()
-    else:
-        im = np.array(image)
+# def plot_image(image, boxes):
+#     """Plots predicted bounding boxes on the image"""
+#     if isinstance(image, torch.Tensor):
+#         im = image.detach().cpu().numpy()
+#     else:
+#         im = np.array(image)
 
-    im = np.clip(im, 0, 1)
-    height, width, _ = im.shape
+#     im = np.clip(im, 0, 1)
+#     height, width, _ = im.shape
 
-    # Create figure and axes
-    fig, ax = plt.subplots(1)
-    # Display the image
-    ax.imshow(im)
+#     # Create figure and axes
+#     fig, ax = plt.subplots(1)
+#     # Display the image
+#     ax.imshow(im)
 
-    # box[0] is x midpoint, box[2] is width
-    # box[1] is y midpoint, box[3] is height
+#     # box[0] is x midpoint, box[2] is width
+#     # box[1] is y midpoint, box[3] is height
 
-    # Create a Rectangle potch
-    for box in boxes:
-        box = box[2:]
-        assert len(box) == 4, "Got more values than in x, y, w, h, in a box!"
-        upper_left_x = box[0] - box[2] / 2
-        upper_left_y = box[1] - box[3] / 2
-        rect = patches.Rectangle(
-            (upper_left_x * width, upper_left_y * height),
-            box[2] * width,
-            box[3] * height,
-            linewidth=1,
-            edgecolor="r",
-            facecolor="none",
-        )
-        # Add the patch to the Axes
-        ax.add_patch(rect)
+#     # Create a Rectangle potch
+#     for box in boxes:
+#         box = box[2:]
+#         assert len(box) == 4, "Got more values than in x, y, w, h, in a box!"
+#         upper_left_x = box[0] - box[2] / 2
+#         upper_left_y = box[1] - box[3] / 2
+#         rect = patches.Rectangle(
+#             (upper_left_x * width, upper_left_y * height),
+#             box[2] * width,
+#             box[3] * height,
+#             linewidth=1,
+#             edgecolor="r",
+#             facecolor="none",
+#         )
+#         # Add the patch to the Axes
+#         ax.add_patch(rect)
 
-    plt.savefig("eval_sample.png", bbox_inches="tight")
-    plt.show()
+#     plt.savefig("eval_sample.png", bbox_inches="tight")
+#     plt.show()
 
-def get_bboxes(
-    loader,
-    model,
-    iou_threshold,
-    threshold,
-    pred_format="cells",
-    box_format="midpoint",
-    device="cuda",
-):
-    all_pred_boxes = []
-    all_true_boxes = []
+# def get_bboxes(
+#     loader,
+#     model,
+#     iou_threshold,
+#     threshold,
+#     pred_format="cells",
+#     box_format="midpoint",
+#     device="cuda",
+# ):
+#     all_pred_boxes = []
+#     all_true_boxes = []
 
-    # make sure model is in eval before get bboxes
-    model.eval()
-    train_idx = 0
+#     # make sure model is in eval before get bboxes
+#     model.eval()
+#     train_idx = 0
 
-    for batch_idx, (x, labels) in enumerate(loader):
-        x = x.to(device)
-        labels = labels.to(device)
+#     for batch_idx, (x, labels) in enumerate(loader):
+#         x = x.to(device)
+#         labels = labels.to(device)
 
-        with torch.no_grad():
-            predictions = model(x)
+#         with torch.no_grad():
+#             predictions = model(x)
 
-        batch_size = x.shape[0]
-        true_bboxes = cellboxes_to_boxes(labels)
-        bboxes = cellboxes_to_boxes(predictions)
+#         batch_size = x.shape[0]
+#         true_bboxes = cellboxes_to_boxes(labels)
+#         bboxes = cellboxes_to_boxes(predictions)
 
-        for idx in range(batch_size):
-            nms_boxes = non_max_suppression(
-                bboxes[idx],
-                iou_threshold=iou_threshold,
-                prob_threshold=threshold
-            )
+#         for idx in range(batch_size):
+#             nms_boxes = non_max_suppression(
+#                 bboxes[idx],
+#                 iou_threshold=iou_threshold,
+#                 prob_threshold=threshold
+#             )
 
-            # Uncomment for bbox visualization
-            # if batch_idx == 0 and idx == 0:
-            #    plot_image(x[idx].permute(1,2,0).to("cpu"), nms_boxes)
-            #    print(nms_boxes)
+#             # Uncomment for bbox visualization
+#             # if batch_idx == 0 and idx == 0:
+#             #    plot_image(x[idx].permute(1,2,0).to("cpu"), nms_boxes)
+#             #    print(nms_boxes)
 
-            for nms_box in nms_boxes:
-                all_pred_boxes.append([train_idx] + nms_box)
+#             for nms_box in nms_boxes:
+#                 all_pred_boxes.append([train_idx] + nms_box)
 
-            for box in true_bboxes[idx]:
-                # many will get converted to 0 pred
-                if box[1] > threshold:
-                    all_true_boxes.append([train_idx] + box)
+#             for box in true_bboxes[idx]:
+#                 # many will get converted to 0 pred
+#                 if box[1] > threshold:
+#                     all_true_boxes.append([train_idx] + box)
 
-            train_idx += 1
+#             train_idx += 1
 
-    model.train()
-    return all_pred_boxes, all_true_boxes
+#     model.train()
+#     return all_pred_boxes, all_true_boxes
 
-def convert_cellboxes(predictions, S=7):
-    """
-    Converts bounding boxes output from Yolo with
-    an image split size of S into entire image ratios
-    rather than relative to cell ratios. Tried to do this
-    vectorized, but this resulted in quite difficult to read
-    code... Use as a black box? Or implement a more intuitive,
-    using 2 for loops iterating range(S) and convert them one
-    by one, resulting in a slower but more readable implementation.
-    """
+# def convert_cellboxes(predictions, S=7):
+#     """
+#     Converts bounding boxes output from Yolo with
+#     an image split size of S into entire image ratios
+#     rather than relative to cell ratios. Tried to do this
+#     vectorized, but this resulted in quite difficult to read
+#     code... Use as a black box? Or implement a more intuitive,
+#     using 2 for loops iterating range(S) and convert them one
+#     by one, resulting in a slower but more readable implementation.
+#     """
 
-    predictions = predictions.to("cpu")
-    batch_size = predictions.shape[0]
-    predictions = predictions.reshape(batch_size, 7, 7, 30)
-    bboxes1 = predictions[..., 21:25]
-    bboxes2 = predictions[..., 26:30]
-    scores = torch.cat(
-        (predictions[..., 20].unsqueeze(0), predictions[..., 25].unsqueeze(0)), dim=0
-    )
-    best_box = scores.argmax(0).unsqueeze(-1)
-    best_boxes = bboxes1 * (1 - best_box) + best_box * bboxes2
-    cell_indices = torch.arange(7).repeat(batch_size, 7, 1).unsqueeze(-1)
-    x = 1 / S * (best_boxes[..., :1] + cell_indices)
-    y = 1 / S * (best_boxes[..., 1:2] + cell_indices.permute(0, 2, 1, 3))
-    w_h = best_boxes[..., 2:4]
-    converted_bboxes = torch.cat((x, y, w_h), dim=-1)
-    predicted_class = predictions[..., :20].argmax(-1).unsqueeze(-1)
-    best_confidence = torch.max(predictions[..., 20], predictions[..., 25]).unsqueeze(
-        -1
-    )
-    converted_preds = torch.cat(
-        (predicted_class, best_confidence, converted_bboxes), dim=-1
-    )
+#     predictions = predictions.to("cpu")
+#     batch_size = predictions.shape[0]
+#     predictions = predictions.reshape(batch_size, 7, 7, 30)
+#     bboxes1 = predictions[..., 21:25]
+#     bboxes2 = predictions[..., 26:30]
+#     scores = torch.cat(
+#         (predictions[..., 20].unsqueeze(0), predictions[..., 25].unsqueeze(0)), dim=0
+#     )
+#     best_box = scores.argmax(0).unsqueeze(-1)
+#     best_boxes = bboxes1 * (1 - best_box) + best_box * bboxes2
+#     cell_indices = torch.arange(7).repeat(batch_size, 7, 1).unsqueeze(-1)
+#     x = 1 / S * (best_boxes[..., :1] + cell_indices)
+#     y = 1 / S * (best_boxes[..., 1:2] + cell_indices.permute(0, 2, 1, 3))
+#     w_h = best_boxes[..., 2:4]
+#     converted_bboxes = torch.cat((x, y, w_h), dim=-1)
+#     predicted_class = predictions[..., :20].argmax(-1).unsqueeze(-1)
+#     best_confidence = torch.max(predictions[..., 20], predictions[..., 25]).unsqueeze(
+#         -1
+#     )
+#     converted_preds = torch.cat(
+#         (predicted_class, best_confidence, converted_bboxes), dim=-1
+#     )
 
-    return converted_preds
+#     return converted_preds
 
 
-def cellboxes_to_boxes(out, S=7):
-    converted_pred = convert_cellboxes(out).reshape(out.shape[0], S * S, -1)
-    converted_pred[..., 0] = converted_pred[..., 0].long()
-    all_bboxes = []
+# def cellboxes_to_boxes(out, S=7):
+#     converted_pred = convert_cellboxes(out).reshape(out.shape[0], S * S, -1)
+#     converted_pred[..., 0] = converted_pred[..., 0].long()
+#     all_bboxes = []
 
-    for ex_idx in range(out.shape[0]):
-        bboxes = []
+#     for ex_idx in range(out.shape[0]):
+#         bboxes = []
 
-        for bbox_idx in range(S * S):
-            bboxes.append([x.item() for x in converted_pred[ex_idx, bbox_idx, :]])
-        all_bboxes.append(bboxes)
+#         for bbox_idx in range(S * S):
+#             bboxes.append([x.item() for x in converted_pred[ex_idx, bbox_idx, :]])
+#         all_bboxes.append(bboxes)
 
-    return all_bboxes
+#     return all_bboxes
 
 def save_checkpoint(state, filename="my_checkpoint.pth.tar"):
     print("=> Saving checkpoint")
