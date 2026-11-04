@@ -88,6 +88,8 @@ class RandomScaleTranslates:
             if (cx2 - cx1) * (cy2 - cy1) < self.min_visible * (w * h):
                 continue   
 
+            kept.append([c, (cx1 + cx2) / 2, (cy1 + cy2) / 2, cx2 - cx1, cy2 - cy1])
+
         return img, kept
 
 # Move transforms here instead of keeping them in train
