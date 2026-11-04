@@ -21,6 +21,8 @@ class Compose:
         return img, boxes
 
 class RandomHorizontalFlips:
+    take_boxes = True
+
     def __init__(self, p=0.5):
         self.p = p
 
@@ -31,6 +33,8 @@ class RandomHorizontalFlips:
         return img, boxes
 
 class RandomScaleTranslates:
+    take_boxes = True
+
     def __init__(self, max_frac=0.2, min_visible=0.25, fill=FILL):
         self.max_frac = max_frac
         self.min_visible = min_visible
