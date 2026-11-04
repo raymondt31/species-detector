@@ -7,7 +7,7 @@ from augment import (
 )
 
 class VOCdataset(torch.utils.data.Dataset):
-    def __init__(self, S=7, B=2, C=20, year=2012, mode="train",  transform=None):
+    def __init__(self, S=7, B=2, C=20, year="2012", mode="train",  transform=None):
         self.S = S
         self.B = B
         self.C = C
