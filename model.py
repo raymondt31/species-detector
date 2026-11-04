@@ -127,8 +127,7 @@ class Yolov1(nn.Module):
     # Freezing and unfreezing to prevent huge gradients rewriting pretrained weights
     def freeze_backbone(self):
 
-        # Freeze all but self-added conv layer
-        for p in self.darknet[:-1].parameters(): 
+        for p in self.darknet.parameters(): 
             p.requires_grad = False
         self.backbone_frozen = True
 
