@@ -7,9 +7,8 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader, ConcatDataset
 from model import Yolov1
 from dataset import VOCdataset
+from evaluate import VOCEvalSet, evaluate_model
 from utils import(
-    mean_average_precision,
-    get_bboxes,
     save_checkpoint,
     load_checkpoint
 )
@@ -155,7 +154,7 @@ def main():
         drop_last=True
     )
 
-    val_dataset = VOCdataset(year="2007", mode="test", transform=val_transform)
+    val_dataset = VOCEvalSet(root="./data", year="2007", split="test", transform=val_transform)
 
     val_loader = DataLoader(
         dataset=val_dataset,
@@ -208,13 +207,7 @@ def main():
 
         # Train epoch then score, so the last epoch isn't neglected
         if (epoch + 1) % MAP_FREQ == 0 or epoch == EPOCHS-1:
-            pred_boxes, target_boxes = get_bboxes(
-                val_loader, model, iou_threshold=0.5, threshold=0.01, device=DEVICE
-            )
-
-            current_map = float(mean_average_precision(
-                pred_boxes, target_boxes, iou_threshold=0.5
-            ))
+            current_map = evaluate_model(model, val_loader, val_dataset, DEVICE)
 
             print(f"Validation mAP: {current_map:.4f}")
             log["val_mAP"] = current_map
