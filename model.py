@@ -52,6 +52,7 @@ class Yolov1(nn.Module):
     
     def forward(self, x):
         x = self.darknet(x)
+        x = self.neck(x)
         return self.fcs(x)
     
     def _create_rn50_layers(self):
