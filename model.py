@@ -45,34 +45,26 @@ class Yolov1(nn.Module):
 
         self.in_channels = in_channels
         self.darknet = self._create_rn50_layers()
+        self.neck = self._create_neck()
         self.fcs = self._create_fcs(**kwargs)
         self.backbone_frozen = True # Keep track of frozen state for BN
         self.freeze_backbone()
     
     def forward(self, x):
         x = self.darknet(x)
+        x = self.neck(x)
         return self.fcs(x)
     
     def _create_rn50_layers(self):
+        model = resnet50(ResNet50_Weights.IMAGENET1K_V2)
+        return nn.Sequential(*list(model.children())[:-2])
 
-        layers = []
-
-        # Cut off avgpool and fc layers from resnet50
-        weights = ResNet50_Weights.IMAGENET1K_V2
-        model = resnet50(weights)
-        ch = list(model.children())
-        layers = list(ch[:-2])
-
-        # Downsample from 14 x 14 to 7 x 7 and compress channels down from 2048 to 1024
-        conv = nn.Conv2d(
-            in_channels=2048, 
-            out_channels=1024, # for channel compresison
-            kernel_size=1,
-            stride=2, # for downsampling
+    def _create_neck(self):
+        return nn.Sequential(
+            CNNBlock(2048, 512, kernel_size=1), # Cheaper channel reduction
+            CNNBlock(512, 1024, kernel_size=3, stride=2, padding=1), # 14x14 -> 7x7
+            CNNBlock(1024, 1024, kernel_size=3, padding=1), # refine at grid res
         )
-        layers.append(conv)
-
-        return nn.Sequential(*layers)
 
     # def _create_conv_layers(self, architecture):
     #     layers = []
@@ -135,8 +127,7 @@ class Yolov1(nn.Module):
     # Freezing and unfreezing to prevent huge gradients rewriting pretrained weights
     def freeze_backbone(self):
 
-        # Freeze all but self-added conv layer
-        for p in self.darknet[:-1].parameters(): 
+        for p in self.darknet.parameters(): 
             p.requires_grad = False
         self.backbone_frozen = True
 
